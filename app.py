@@ -1,9 +1,11 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from yt_dlp import YoutubeDL
 import os
 import tempfile
 
 app = Flask(__name__)
+DOWNLOAD_FOLDER = tempfile.mkdtemp()
+app.config['DOWNLOAD_FOLDER'] = DOWNLOAD_FOLDER
 
 @app.route('/download', methods=['POST'])
 def download_video():
@@ -14,11 +16,9 @@ def download_video():
         return jsonify({'error': 'URL non fournie'}), 400
     
     try:
-        temp_dir = tempfile.mkdtemp()
-        
         options = {
             'format': 'best',
-            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+            'outtmpl': os.path.join(app.config['DOWNLOAD_FOLDER'], '%(title)s.%(ext)s'),
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
@@ -31,18 +31,25 @@ def download_video():
         with YoutubeDL(options) as ydl:
             ydl.download([video_url])
 
-        file_list = os.listdir(temp_dir)
+        file_list = os.listdir(app.config['DOWNLOAD_FOLDER'])
         if not file_list:
             return jsonify({'error': 'Échec du téléchargement'}), 500
         
-        file_name = file_list[0]
+        file_name = file_list[-1]  # Dernier fichier téléchargé
+
+        file_url = request.host_url + "videos/" + file_name
+
         return jsonify({
-            'message': 'Téléchargement réussi',
-            'filename': file_name
+            'success': True,
+            'file_url': file_url
         }), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/videos/<path:filename>', methods=['GET'])
+def serve_video(filename):
+    return send_from_directory(app.config['DOWNLOAD_FOLDER'], filename, as_attachment=True)
 
 @app.route('/', methods=['GET'])
 def home():
